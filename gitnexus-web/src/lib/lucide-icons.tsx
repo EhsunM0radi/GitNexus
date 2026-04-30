@@ -54,6 +54,7 @@ export {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Clock,
   Code,
   Copy,
   Eye,
