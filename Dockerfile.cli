@@ -31,8 +31,9 @@ RUN npm prune --omit=dev --prefix gitnexus
 # ── Runtime ────────────────────────────────────────────────────────────
 FROM node:22-trixie-slim AS runtime
 
-# curl for the healthcheck; git so `gitnexus` can clone repos at runtime.
-RUN apt-get update && apt-get install -y --no-install-recommends curl git && rm -rf /var/lib/apt/lists/*
+# curl for the healthcheck, git + ssh for cloning repos at runtime.
+# ca-certificates required for HTTPS clone; openssh-client for SSH clone.
+RUN apt-get update && apt-get install -y --no-install-recommends curl git ca-certificates openssh-client && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
