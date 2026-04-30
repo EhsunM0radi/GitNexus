@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractRepoName, getCloneDir, validateGitUrl } from '../../src/server/git-clone.js';
+import { extractRepoName, getCloneDir, validateGitUrl, isSshUrl, validateSshUrl } from '../../src/server/git-clone.js';
 
 describe('git-clone', () => {
   describe('extractRepoName', () => {
@@ -120,6 +120,93 @@ describe('git-clone', () => {
 
     it('blocks 0.0.0.0', () => {
       expect(() => validateGitUrl('http://0.0.0.0/repo.git')).toThrow('private/internal');
+    });
+  });
+
+  describe('isSshUrl', () => {
+    it('detects scp-like SSH URLs', () => {
+      expect(isSshUrl('git@github.com:user/repo.git')).toBe(true);
+      expect(isSshUrl('git@gitlab.com:group/subgroup/repo.git')).toBe(true);
+    });
+
+    it('detects scp-like SSH URLs without .git', () => {
+      expect(isSshUrl('git@github.com:user/repo')).toBe(true);
+    });
+
+    it('detects ssh:// protocol URLs', () => {
+      expect(isSshUrl('ssh://git@github.com/user/repo.git')).toBe(true);
+    });
+
+    it('detects ssh:// with custom port', () => {
+      expect(isSshUrl('ssh://git@github.com:2222/user/repo.git')).toBe(true);
+    });
+
+    it('rejects HTTPS URLs', () => {
+      expect(isSshUrl('https://github.com/user/repo.git')).toBe(false);
+    });
+
+    it('rejects HTTP URLs', () => {
+      expect(isSshUrl('http://github.com/user/repo.git')).toBe(false);
+    });
+
+    it('rejects local file paths', () => {
+      expect(isSshUrl('/home/user/project')).toBe(false);
+    });
+
+    it('rejects git:// protocol', () => {
+      expect(isSshUrl('git://github.com/user/repo.git')).toBe(false);
+    });
+  });
+
+  describe('validateSshUrl', () => {
+    it('allows valid GitHub SSH URLs', () => {
+      expect(() => validateSshUrl('git@github.com:user/repo.git')).not.toThrow();
+    });
+
+    it('allows valid GitLab SSH URLs', () => {
+      expect(() => validateSshUrl('git@gitlab.com:group/repo.git')).not.toThrow();
+    });
+
+    it('allows ssh:// protocol GitHub URLs', () => {
+      expect(() => validateSshUrl('ssh://git@github.com/user/repo.git')).not.toThrow();
+    });
+
+    it('blocks SSH to localhost', () => {
+      expect(() => validateSshUrl('git@localhost:repo.git')).toThrow('private/internal');
+    });
+
+    it('blocks ssh:// to localhost', () => {
+      expect(() => validateSshUrl('ssh://git@localhost/repo.git')).toThrow('private/internal');
+    });
+
+    it('blocks SSH to cloud metadata hostname', () => {
+      expect(() => validateSshUrl('git@metadata.google.internal:repo.git')).toThrow(
+        'private/internal',
+      );
+    });
+
+    it('blocks SSH to IPv4 loopback', () => {
+      expect(() => validateSshUrl('git@127.0.0.1:repo.git')).toThrow('private/internal');
+    });
+
+    it('blocks SSH to IPv4 private range', () => {
+      expect(() => validateSshUrl('git@192.168.1.1:repo.git')).toThrow('private/internal');
+    });
+
+    it('blocks SSH to 10.x private range', () => {
+      expect(() => validateSshUrl('git@10.0.0.1:repo.git')).toThrow('private/internal');
+    });
+
+    it('blocks SSH to IPv6 loopback', () => {
+      expect(() => validateSshUrl('git@[::1]:repo.git')).toThrow('private/internal');
+    });
+
+    it('allows SSH to public IP', () => {
+      expect(() => validateSshUrl('git@140.82.121.4:repo.git')).not.toThrow();
+    });
+
+    it('rejects malformed SSH URL without colon', () => {
+      expect(() => validateSshUrl('git@github.com')).toThrow('Invalid SSH URL format');
     });
   });
 });

@@ -4,6 +4,11 @@ All notable changes to GitNexus will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **SSH URL support** — `gitnexus serve` and web UI now accept SSH repository URLs (`git@github.com:user/repo.git`) alongside HTTPS URLs. Full SSRF validation is applied to SSH hostnames (blocking localhost, private IPs, cloud metadata endpoints).
+- **Auto-sync scheduler** — `gitnexus serve --auto-sync` periodically checks registered repos for new commits via `git fetch --dry-run` and triggers background pull + re-analysis when changes are detected. Interval is configurable via `--auto-sync-interval` (default 30 min).
+- **Improved web UI validation** — Inline feedback when the entered repository URL doesn't match any supported format; long-loading indicator when the initial connection takes more than a few seconds.
+
 ### Changed
 - Migrated from KuzuDB to LadybugDB v0.15 (`@ladybugdb/core`, `@ladybugdb/wasm-core`)
 - Renamed all internal paths from `kuzu` to `lbug` (storage: `.gitnexus/kuzu` → `.gitnexus/lbug`)

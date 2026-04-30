@@ -12,15 +12,29 @@ process.on('unhandledRejection', (reason: any) => {
   process.exit(1);
 });
 
-export const serveCommand = async (options?: { port?: string; host?: string }) => {
+export const serveCommand = async (options?: {
+  port?: string;
+  host?: string;
+  autoSync?: boolean;
+  autoSyncInterval?: string;
+}) => {
   const port = Number(options?.port ?? 4747);
   // Default to 'localhost' so the OS decides whether to bind to 127.0.0.1 or
   // ::1 based on system configuration, avoiding spurious CORS errors when the
   // hosted frontend at gitnexus.vercel.app connects to localhost.
   const host = options?.host ?? 'localhost';
 
+  const autoSync =
+    options?.autoSync || process.env.GITNEXUS_AUTO_SYNC === 'true';
+
+  const autoSyncInterval = options?.autoSyncInterval
+    ? Number(options.autoSyncInterval)
+    : process.env.GITNEXUS_AUTO_SYNC_INTERVAL
+      ? Number(process.env.GITNEXUS_AUTO_SYNC_INTERVAL)
+      : undefined;
+
   try {
-    await createServer(port, host);
+    await createServer({ port, host, autoSync, autoSyncInterval });
   } catch (err: any) {
     console.error(`\nFailed to start GitNexus server:\n`);
     console.error(`  ${err.message || err}\n`);

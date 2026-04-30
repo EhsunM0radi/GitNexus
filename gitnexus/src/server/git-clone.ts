@@ -11,11 +11,54 @@ import os from 'os';
 import fs from 'fs/promises';
 import { isIP } from 'net';
 
-/** Extract the repository name from a git URL (HTTPS or SSH). */
+/** Extract the repository name from a git URL (HTTPS, SSH, or scp-like). */
 export function extractRepoName(url: string): string {
   const cleaned = url.replace(/\/+$/, '');
   const lastSegment = cleaned.split(/[/:]/).pop() || 'unknown';
   return lastSegment.replace(/\.git$/, '');
+}
+
+// ── SSH URL support ──────────────────────────────────────────────────────────
+
+const SSH_SCP_RE = /^[a-zA-Z0-9._-]+@([a-zA-Z0-9][a-zA-Z0-9._-]*|\[[0-9a-fA-F:]+\]):(.+)$/;
+const SSH_PROTO_RE = /^ssh:\/\/([a-zA-Z0-9][a-zA-Z0-9._-]*@)?([^/:]+)(?::\d+)?\/(.+)$/;
+
+/** Detect whether a URL is an SSH git URL (scp-like or ssh:// protocol). */
+export function isSshUrl(url: string): boolean {
+  return SSH_SCP_RE.test(url) || SSH_PROTO_RE.test(url);
+}
+
+/** Validate an SSH git URL against SSRF threats. */
+export function validateSshUrl(url: string): void {
+  let host: string;
+
+  const protoMatch = url.match(SSH_PROTO_RE);
+  if (protoMatch) {
+    host = protoMatch[2].toLowerCase();
+  } else {
+    const scpMatch = url.match(SSH_SCP_RE);
+    if (!scpMatch) {
+      throw new Error('Invalid SSH URL format');
+    }
+    host = scpMatch[1].toLowerCase();
+  }
+
+  // Block known dangerous hostnames (cloud metadata services)
+  if (BLOCKED_HOSTNAMES.has(host)) {
+    throw new Error('Cloning from private/internal addresses is not allowed');
+  }
+
+  // Block localhost variants
+  if (host === 'localhost' || host.startsWith('localhost.')) {
+    throw new Error('Cloning from private/internal addresses is not allowed');
+  }
+
+  // Block IPv4 loopback and private ranges when host is an IP
+  if (isIP(host) === 4) {
+    assertNotPrivateIPv4(host);
+  } else if (isIP(host) === 6 || host.includes(':')) {
+    assertNotPrivateIPv6(host.startsWith('[') ? host.slice(1, -1) : host);
+  }
 }
 
 /** Get the clone target directory for a repo name. */
@@ -182,7 +225,12 @@ export async function cloneOrPull(
     onProgress?.({ phase: 'pulling', message: 'Pulling latest changes...' });
     await runGit(['pull', '--ff-only'], targetDir);
   } else {
-    validateGitUrl(url);
+    // Validate URL before cloning — use the appropriate validator for the scheme
+    if (isSshUrl(url)) {
+      validateSshUrl(url);
+    } else {
+      validateGitUrl(url);
+    }
     await fs.mkdir(path.dirname(targetDir), { recursive: true });
     onProgress?.({ phase: 'cloning', message: `Cloning ${url}...` });
     await runGit(['clone', '--depth', '1', url, targetDir]);

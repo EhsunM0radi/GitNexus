@@ -15,6 +15,8 @@ import {
   ArrowRight,
   AlertCircle,
   Sparkles,
+  Clock,
+  X,
 } from '@/lib/lucide-icons';
 import {
   startAnalyze,
@@ -28,11 +30,18 @@ import { AnalyzeProgress } from './AnalyzeProgress';
 
 type InputMode = 'github' | 'local';
 
-const GITHUB_RE = /^https?:\/\/(www\.)?github\.com\/[^/\s]+\/[^/\s]+/i;
+// Matches https://github.com/owner/repo or git@github.com:owner/repo.git
+const GITHUB_HTTPS_RE = /^https?:\/\/(www\.)?github\.com\/[^/\s]+\/[^/\s]+/i;
+const GITHUB_SSH_RE = /^git@github\.com:[^/\s]+\/[^/\s]+(?:\.git)?$/i;
 const IS_WINDOWS = navigator.userAgent.toLowerCase().includes('win');
 
 function isValidGithubUrl(value: string): boolean {
-  return GITHUB_RE.test(value.trim());
+  const trimmed = value.trim();
+  return GITHUB_HTTPS_RE.test(trimmed) || GITHUB_SSH_RE.test(trimmed);
+}
+
+function isSshUrl(value: string): boolean {
+  return GITHUB_SSH_RE.test(value.trim());
 }
 
 // ── Mode tabs ────────────────────────────────────────────────────────────────
@@ -51,7 +60,7 @@ function ModeTabs({ mode, onChange }: { mode: InputMode; onChange: (m: InputMode
         } `}
       >
         <Github className="h-3 w-3" />
-        GitHub URL
+        Remote URL
       </button>
       <button
         role="tab"
@@ -151,6 +160,8 @@ export const RepoAnalyzer = ({ variant, onComplete, onCancel }: RepoAnalyzerProp
   const jobIdRef = useRef<string | null>(null);
   const sseControllerRef = useRef<AbortController | null>(null);
   const completeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [startingTooLong, setStartingTooLong] = useState(false);
+  const startingSinceRef = useRef<number>(0);
 
   useEffect(() => {
     return () => {
@@ -179,7 +190,7 @@ export const RepoAnalyzer = ({ variant, onComplete, onCancel }: RepoAnalyzerProp
 
   const handleAnalyze = async () => {
     if (mode === 'github' && !isValidGithubUrl(githubUrl)) {
-      setValidationError('Please enter a valid GitHub repository URL.');
+      setValidationError('Please enter a valid repository URL (HTTPS or SSH).');
       return;
     }
     if (mode === 'local' && localPath.trim().length < 2) {
@@ -189,10 +200,18 @@ export const RepoAnalyzer = ({ variant, onComplete, onCancel }: RepoAnalyzerProp
 
     setValidationError(null);
     setPhase('starting');
+    setStartingTooLong(false);
+    startingSinceRef.current = Date.now();
+
+    // Show a hint if the initial connection takes too long
+    const startingTimer = setTimeout(() => {
+      setStartingTooLong(true);
+    }, 4_000);
 
     try {
       const request = mode === 'github' ? { url: githubUrl.trim() } : { path: localPath.trim() };
       const { jobId } = await startAnalyze(request);
+      clearTimeout(startingTimer);
       jobIdRef.current = jobId;
       setPhase('analyzing');
 
@@ -218,6 +237,7 @@ export const RepoAnalyzer = ({ variant, onComplete, onCancel }: RepoAnalyzerProp
       );
       sseControllerRef.current = controller;
     } catch (err) {
+      clearTimeout(startingTimer);
       setValidationError(err instanceof Error ? err.message : 'Failed to start analysis');
       setPhase('error');
     }
@@ -233,6 +253,7 @@ export const RepoAnalyzer = ({ variant, onComplete, onCancel }: RepoAnalyzerProp
       jobIdRef.current = null;
     }
     setPhase('input');
+    setStartingTooLong(false);
     setProgress({ phase: 'queued', percent: 0, message: 'Queued' });
   };
 
@@ -245,14 +266,14 @@ export const RepoAnalyzer = ({ variant, onComplete, onCancel }: RepoAnalyzerProp
       {/* Mode tabs */}
       {showInput && <ModeTabs mode={mode} onChange={handleModeChange} />}
 
-      {/* GitHub URL input */}
+      {/* Remote URL input */}
       {showInput && mode === 'github' && (
         <div className="space-y-2">
           <label
             htmlFor={inputId}
             className="block text-xs font-medium tracking-wider text-text-secondary uppercase"
           >
-            GitHub Repository URL
+            Repository URL
           </label>
           <div
             className={`flex items-center gap-3 rounded-xl border bg-void px-4 py-3.5 transition-all duration-200 ${
@@ -266,7 +287,7 @@ export const RepoAnalyzer = ({ variant, onComplete, onCancel }: RepoAnalyzerProp
             <Github className="h-4 w-4 shrink-0 text-text-muted" />
             <input
               id={inputId}
-              type="url"
+              type="text"
               value={githubUrl}
               onChange={(e) => {
                 setGithubUrl(e.target.value);
@@ -279,21 +300,28 @@ export const RepoAnalyzer = ({ variant, onComplete, onCancel }: RepoAnalyzerProp
                 }
               }}
               disabled={isLoading}
-              placeholder="https://github.com/owner/repo"
+              placeholder="https://github.com/owner/repo or git@github.com:owner/repo.git"
               autoComplete="url"
               spellCheck={false}
               className="flex-1 border-none bg-transparent font-mono text-sm text-text-primary outline-none placeholder:text-text-muted disabled:opacity-50"
             />
-            {githubUrl.length > 10 && (
+            {githubUrl.length > 2 && (
               <div className="shrink-0">
                 {isValidGithubUrl(githubUrl) ? (
                   <Check className="h-3.5 w-3.5 text-emerald-400" />
                 ) : (
-                  <AlertCircle className="h-3.5 w-3.5 text-text-muted" />
+                  <AlertCircle className="h-3.5 w-3.5 text-amber-400" />
                 )}
               </div>
             )}
           </div>
+          {/* Inline validation hint */}
+          {githubUrl.length > 2 && !isValidGithubUrl(githubUrl) && (
+            <p className="flex items-center gap-1.5 text-xs text-amber-400/80">
+              <AlertCircle className="h-3 w-3 shrink-0" />
+              Enter a valid GitHub URL (https://github.com/owner/repo or git@github.com:owner/repo.git)
+            </p>
+          )}
         </div>
       )}
 
@@ -392,12 +420,33 @@ export const RepoAnalyzer = ({ variant, onComplete, onCancel }: RepoAnalyzerProp
 
       {/* CTA button */}
       {(phase === 'input' || phase === 'starting') && (
-        <AnalyzeButton
-          canSubmit={canSubmit}
-          isLoading={isLoading}
-          onClick={handleAnalyze}
-          variant={variant}
-        />
+        <div className="space-y-3">
+          <AnalyzeButton
+            canSubmit={canSubmit}
+            isLoading={isLoading}
+            onClick={handleAnalyze}
+            variant={variant}
+          />
+          {/* Long-loading feedback during initial connection */}
+          {phase === 'starting' && startingTooLong && (
+            <div className="flex flex-col items-center gap-2 animate-fade-in">
+              <p className="flex items-center gap-1.5 text-xs text-amber-400/80">
+                <Clock className="h-3.5 w-3.5" />
+                Still connecting to server — large repos may take a few minutes to clone
+              </p>
+              <button
+                onClick={() => {
+                  setPhase('input');
+                  setStartingTooLong(false);
+                }}
+                className="flex items-center gap-1 rounded-lg bg-red-500/10 px-3 py-1.5 text-xs text-red-400 transition-all duration-200 hover:bg-red-500/20 cursor-pointer"
+              >
+                <X className="h-3 w-3" />
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Error retry */}

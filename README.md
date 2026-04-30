@@ -57,7 +57,7 @@ https://github.com/user-attachments/assets/172685ba-8e54-4ea7-9ad1-e31a3398da72
 | **Parsing** | Tree-sitter native bindings                                    | Tree-sitter WASM                                             |
 | **Privacy** | Everything local, no network                                   | Everything in-browser, no server                             |
 
-> **Bridge mode:** `gitnexus serve` connects the two — the web UI auto-detects the local server and can browse all your CLI-indexed repos without re-uploading or re-indexing.
+> **Bridge mode:** `gitnexus serve` connects the two — the web UI auto-detects the local server and can browse all your CLI-indexed repos without re-uploading or re-indexing. Supports both HTTPS and SSH repository URLs (including private repos). Use `--auto-sync` to keep indexed repos up-to-date automatically.
 
 ---
 
@@ -68,7 +68,7 @@ GitNexus is available as an **enterprise offering** - either as a fully managed 
 Enterprise includes:
 - **PR Review** - automated blast radius analysis on pull requests
 - **Auto-updating Code Wiki** - always up-to-date documentation (Code Wiki is also available in OSS)
-- **Auto-reindexing** - knowledge graph stays fresh automatically
+- **Auto-reindexing** - knowledge graph stays fresh automatically (also available in OSS via `gitnexus serve --auto-sync`)
 - **Multi-repo support** - unified graph across repositories
 - **OCaml support** - additional language coverage
 - **Priority feature/language support** - request new languages or features
@@ -200,6 +200,10 @@ gitnexus analyze --verbose       # Log skipped files when parsers are unavailabl
 gitnexus analyze --worker-timeout 60  # Increase worker idle timeout for slow parses
 gitnexus mcp                     # Start MCP server (stdio) — serves all indexed repos
 gitnexus serve                   # Start local HTTP server (multi-repo) for web UI connection
+gitnexus serve --auto-sync       # Enable automatic pull + re-analysis when repos have new commits
+gitnexus serve --auto-sync-interval 600  # Check for updates every 10 minutes
+gitnexus serve --host 0.0.0.0    # Allow remote web UI connections (LAN/private network)
+gitnexus serve --port 4748       # Use a custom port
 gitnexus list                    # List all indexed repositories
 gitnexus status                  # Show index status for current repo
 gitnexus clean                   # Delete index for current repo
@@ -325,6 +329,8 @@ flowchart TD
 ## Web UI (browser-based)
 
 A fully client-side graph explorer and AI chat. No server, no install — your code never leaves the browser.
+
+Supports both HTTPS and SSH repository URLs for cloning (when using bridge mode with `gitnexus serve`). Private repositories are supported via SSH key authentication.
 
 **Try it now:** [gitnexus.vercel.app](https://gitnexus.vercel.app) — drag & drop a ZIP and start exploring.
 

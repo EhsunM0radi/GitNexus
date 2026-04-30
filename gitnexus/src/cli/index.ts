@@ -78,6 +78,14 @@ program
   .description('Start local HTTP server for web UI connection')
   .option('-p, --port <port>', 'Port number', '4747')
   .option('--host <host>', 'Bind address (default: 127.0.0.1, use 0.0.0.0 for remote access)')
+  .option(
+    '--auto-sync',
+    'Periodically check and pull registered repos for new commits (default: false)',
+  )
+  .option(
+    '--auto-sync-interval <seconds>',
+    'Interval between auto-sync checks in seconds (default: 1800 = 30 minutes)',
+  )
   .action(createLazyAction(() => import('./serve.js'), 'serveCommand'));
 
 program

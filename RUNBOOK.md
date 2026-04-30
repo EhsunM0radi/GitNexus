@@ -113,6 +113,28 @@ npx gitnexus serve
 
 Use when the browser UI should talk to **local** indexed repos instead of WASM-only mode.
 
+### Auto-sync (keep repos up-to-date)
+
+```bash
+npx gitnexus serve --auto-sync                     # Check every 30 min
+npx gitnexus serve --auto-sync --auto-sync-interval 600  # Every 10 min
+```
+
+When enabled, the server periodically `git fetch --dry-run` each registered repo. If new commits are found, it runs `git pull --ff-only` and re-analyzes in the background. Already-running analyses are skipped to avoid conflicts.
+
+### SSH / private repos
+
+The bridge server accepts both HTTPS and SSH repository URLs:
+
+```bash
+# Via the web UI "Remote URL" tab, or:
+curl -X POST http://localhost:4747/api/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"url": "git@github.com:your-org/private-repo.git"}'
+```
+
+The server must have a valid SSH key configured in `~/.ssh` for private repos. SSRF protections block localhost, private IPs, and cloud metadata hostnames in SSH URLs, same as HTTPS validation.
+
 ---
 
 ## CLI equivalents of MCP tools

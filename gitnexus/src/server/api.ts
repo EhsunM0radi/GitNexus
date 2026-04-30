@@ -34,6 +34,7 @@ import { fork } from 'child_process';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { JobManager } from './analyze-job.js';
 import { extractRepoName, getCloneDir, cloneOrPull } from './git-clone.js';
+import { RepoSyncScheduler } from './repo-sync-scheduler.js';
 
 const _require = createRequire(import.meta.url);
 const pkg = _require('../../package.json');
@@ -523,7 +524,22 @@ const requestedRepo = (req: express.Request): string | undefined => {
   return undefined;
 };
 
-export const createServer = async (port: number, host: string = '127.0.0.1') => {
+export interface CreateServerOptions {
+  port: number;
+  host?: string;
+  autoSync?: boolean;
+  autoSyncInterval?: number;
+}
+
+export const createServer = async (portOrOptions: number | CreateServerOptions, hostOverride?: string) => {
+  const opts: CreateServerOptions =
+    typeof portOrOptions === 'number'
+      ? { port: portOrOptions, host: hostOverride ?? '127.0.0.1' }
+      : portOrOptions;
+
+  const port = opts.port;
+  const host = opts.host ?? '127.0.0.1';
+
   const app = express();
   app.disable('x-powered-by');
 
@@ -562,6 +578,94 @@ export const createServer = async (port: number, host: string = '127.0.0.1') => 
   await backend.init();
   const cleanupMcp = mountMCPEndpoints(app, backend);
   const jobManager = new JobManager();
+
+  // ── Auto-sync scheduler ──────────────────────────────────────────
+  let syncScheduler: RepoSyncScheduler | null = null;
+  if (opts.autoSync) {
+    // Thin wrapper that triggers analyze via the same POST /api/analyze logic
+    const analyzeRepo = async (repoPath: string): Promise<void> => {
+      const repoName = repoPath.split('/').pop() || repoPath;
+      const job = jobManager.createJob({ repoPath });
+
+      if (job.status !== 'queued') return; // already running
+
+      jobManager.updateJob(job.id, {
+        repoName,
+        repoPath,
+        status: 'analyzing',
+        progress: { phase: 'analyzing', percent: 0, message: 'Auto-sync re-analysis...' },
+      });
+
+      const analyzeLockKey = getStoragePath(repoPath);
+      const lockErr = acquireRepoLock(analyzeLockKey);
+      if (lockErr) {
+        jobManager.updateJob(job.id, { status: 'failed', error: lockErr });
+        return;
+      }
+
+      try {
+        const isDev = fileURLToPath(import.meta.url).endsWith('.ts');
+        const workerFile = isDev ? 'analyze-worker.ts' : 'analyze-worker.js';
+        const workerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), workerFile);
+        const tsxHookArgs: string[] = isDev
+          ? ['--import', pathToFileURL(_require.resolve('tsx/esm')).href]
+          : [];
+
+        const child = fork(workerPath, [], {
+          execArgv: [...tsxHookArgs, '--max-old-space-size=8192'],
+          stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+        });
+
+        jobManager.registerChild(job.id, child);
+
+        child.on('message', (msg: any) => {
+          if (msg.type === 'progress') {
+            jobManager.updateJob(job.id, {
+              status: 'analyzing',
+              progress: { phase: msg.phase, percent: msg.percent, message: msg.message },
+            });
+          } else if (msg.type === 'complete') {
+            releaseRepoLock(analyzeLockKey);
+            backend
+              .init()
+              .then(() => {
+                jobManager.updateJob(job.id, { status: 'complete', repoName: msg.result.repoName });
+              })
+              .catch((err) => {
+                console.error('[auto-sync] backend.init() failed:', err);
+                jobManager.updateJob(job.id, { status: 'failed', error: 'Server reload failed' });
+              });
+          } else if (msg.type === 'error') {
+            releaseRepoLock(analyzeLockKey);
+            jobManager.updateJob(job.id, { status: 'failed', error: msg.message });
+          }
+        });
+
+        child.on('exit', (code) => {
+          const j = jobManager.getJob(job.id);
+          if (j && j.status !== 'complete' && j.status !== 'failed') {
+            releaseRepoLock(analyzeLockKey);
+            jobManager.updateJob(job.id, {
+              status: 'failed',
+              error: `Worker exited with code ${code}`,
+            });
+          }
+        });
+
+        child.send({
+          type: 'start',
+          repoPath,
+          options: { force: true, embeddings: true },
+        });
+      } catch (err: any) {
+        releaseRepoLock(analyzeLockKey);
+        jobManager.updateJob(job.id, { status: 'failed', error: err.message });
+      }
+    };
+
+    syncScheduler = new RepoSyncScheduler(jobManager, analyzeRepo, opts.autoSyncInterval);
+    syncScheduler.start();
+  }
 
   // Shared repo lock — prevents concurrent analyze + embed on the same repo path,
   // which would corrupt LadybugDB (analyze calls closeLbug + initLbug while embed has queries in flight).
@@ -1689,6 +1793,7 @@ export const createServer = async (port: number, host: string = '127.0.0.1') => 
       server.close();
       jobManager.dispose();
       embedJobManager.dispose();
+      syncScheduler?.stop();
       await cleanupMcp();
       await closeLbug();
       await backend.disconnect();
