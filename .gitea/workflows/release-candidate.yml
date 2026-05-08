@@ -54,7 +54,7 @@ jobs:
   # then redispatch with force=true.
   guard:
     name: Check if release candidate should run
-    runs-on: ubuntu-latest
+    runs-on: linux
     timeout-minutes: 5
     permissions:
       contents: read
@@ -120,7 +120,7 @@ jobs:
     name: Publish release candidate to npm
     needs: [guard, ci]
     if: needs.guard.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: linux
     timeout-minutes: 20
     permissions:
       contents: write # push rc tag + marker

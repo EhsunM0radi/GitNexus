@@ -5,7 +5,7 @@ on:
 
 jobs:
   format:
-    runs-on: ubuntu-latest
+    runs-on: linux
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -18,7 +18,7 @@ jobs:
       - run: npx prettier --check .
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: linux
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -31,7 +31,7 @@ jobs:
       - run: npx eslint .
 
   typecheck:
-    runs-on: ubuntu-latest
+    runs-on: linux
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -40,7 +40,7 @@ jobs:
         working-directory: gitnexus
 
   typecheck-web:
-    runs-on: ubuntu-latest
+    runs-on: linux
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -61,7 +61,7 @@ jobs:
   # allowlist, so new reusable workflows never produce false positives.
   workflow-convention:
     name: Workflow concurrency convention
-    runs-on: ubuntu-latest
+    runs-on: linux
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
